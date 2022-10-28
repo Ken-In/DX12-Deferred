@@ -1,5 +1,5 @@
 //***************************************************************************************
-// NormalMapApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
+// MyApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
 
 #include "../../Common/d3dApp.h"
@@ -21,37 +21,37 @@ const int gNumFrameResources = 3;
 
 // Lightweight structure stores parameters to draw a shape.  This will
 // vary from app-to-app.
-struct RenderItem
-{
+// 绘制物体的轻量结构，每个app都不同
+struct RenderItem {
 	RenderItem() = default;
-    RenderItem(const RenderItem& rhs) = delete;
- 
-    // World matrix of the shape that describes the object's local space
-    // relative to the world space, which defines the position, orientation,
-    // and scale of the object in the world.
-    XMFLOAT4X4 World = MathHelper::Identity4x4();
+	RenderItem(const RenderItem& rhs) = delete;
+
+	//world矩阵描述了local和world之间的关系
+	//transform scale rotation都是在这个矩阵中完成
+	XMFLOAT4X4 World = MathHelper::Identity4x4();
 
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 
-	// Dirty flag indicating the object data has changed and we need to update the constant buffer.
-	// Because we have an object cbuffer for each FrameResource, we have to apply the
-	// update to each FrameResource.  Thus, when we modify obect data we should set 
-	// NumFramesDirty = gNumFrameResources so that each frame resource gets the update.
+	//我们改变了物体数据后，需要更新常量缓冲区中的数据
+	//因为我们用了三个FrameResources，每次更新都要更新三个常量缓冲区
 	int NumFramesDirty = gNumFrameResources;
 
-	// Index into GPU constant buffer corresponding to the ObjectCB for this render item.
+	// 每个物体对应的GPU常量缓冲区索引 
+    // 常量缓冲区包含所有物体的常量 我们需要索引来找到对应物体的常量
 	UINT ObjCBIndex = -1;
 
+	// 物体的材质指针
 	Material* Mat = nullptr;
+	// 物体的网格指针
 	MeshGeometry* Geo = nullptr;
 
-    // Primitive topology.
-    D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	// 基元类型 将顶点列表解释为三角形列表
+	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-    // DrawIndexedInstanced parameters.
-    UINT IndexCount = 0;
-    UINT StartIndexLocation = 0;
-    int BaseVertexLocation = 0;
+	// 绘制索引顶点参数
+	UINT IndexCount = 0;//物体有多少索引
+	UINT StartIndexLocation = 0;//索引起点
+	int BaseVertexLocation = 0;//顶点起点
 };
 
 enum class RenderLayer : int
@@ -62,13 +62,13 @@ enum class RenderLayer : int
 };
 
 
-class NormalMapApp : public D3DApp
+class MyApp : public D3DApp
 {
 public:
-    NormalMapApp(HINSTANCE hInstance);
-    NormalMapApp(const NormalMapApp& rhs) = delete;
-    NormalMapApp& operator=(const NormalMapApp& rhs) = delete;
-    ~NormalMapApp();
+    MyApp(HINSTANCE hInstance);
+    MyApp(const MyApp& rhs) = delete;
+    MyApp& operator=(const MyApp& rhs) = delete;
+    ~MyApp();
 
     virtual bool Initialize()override;
 
@@ -129,7 +129,6 @@ private:
 	std::vector<std::unique_ptr<RenderItem>> mAllRitems;
 
 	// Render items divided by PSO.
-	// 创建两个vector 一个存不透明 一个存天空盒
 	std::vector<RenderItem*> mRitemLayer[(int)RenderLayer::Count];
 
 	UINT mSkyTexHeapIndex = 0;
@@ -154,7 +153,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 
     try
     {
-        NormalMapApp theApp(hInstance);
+        MyApp theApp(hInstance);
         if(!theApp.Initialize())
             return 0;
 
@@ -167,19 +166,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
     }
 }
 
-NormalMapApp::NormalMapApp(HINSTANCE hInstance)
+MyApp::MyApp(HINSTANCE hInstance)
     : D3DApp(hInstance)
 {
 }
 
-NormalMapApp::~NormalMapApp()
+MyApp::~MyApp()
 {
     if(md3dDevice != nullptr)
         FlushCommandQueue();
 }
 
-bool NormalMapApp::Initialize()
+bool MyApp::Initialize()
 {
+	//command obj,swapchain,RtvAndDsvDescHeap
     if(!D3DApp::Initialize())
         return false;
 
@@ -215,44 +215,40 @@ bool NormalMapApp::Initialize()
 
     return true;
 }
-
-void NormalMapApp::CreateRtvAndDsvDescriptorHeaps()
+ 
+void MyApp::CreateRtvAndDsvDescriptorHeaps()
 {
-	// 为G-Buffer需要多加几个RtvDesc
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 3;  // G-Buffer需要3个rtv
 	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 3;
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	rtvHeapDesc.NodeMask = 0;
-	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
-		&rtvHeapDesc, IID_PPV_ARGS(mRtvHeap.GetAddressOf())));
+	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(mRtvHeap.GetAddressOf())));
 
-	// 深度缓冲一个就够
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
-	dsvHeapDesc.NumDescriptors = 1;
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.NumDescriptors = 1;
 	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	dsvHeapDesc.NodeMask = 0;
-	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
-		&dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));
+	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));
 }
  
-void NormalMapApp::OnResize()
+void MyApp::OnResize()
 {
     D3DApp::OnResize();
 
 	mCamera.SetLens(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
 	
-	/*
-	if (mGBuffer != nullptr) {
-		FlushCommandQueue();
-		ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
-
-		mGBuffer->OnResize(mClientWidth, mClientHeight);
-	}*/
+	
+	//if (mGBuffer != nullptr) {
+	//	FlushCommandQueue();
+	//	ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
+	//	mGBuffer->OnResize(mClientWidth, mClientHeight);
+	//}
+	
 }
 
-void NormalMapApp::Update(const GameTimer& gt)
+void MyApp::Update(const GameTimer& gt)
 {
     OnKeyboardInput(gt);
 
@@ -279,132 +275,107 @@ void NormalMapApp::Update(const GameTimer& gt)
 	UpdateObjectCBs(gt);
 	UpdateMaterialBuffer(gt);
 	UpdateMainPassCB(gt);
-	//mGBuffer->OnResize(mClientWidth, mClientHeight);
 
-	 /*std::wstring windowText = mMainWndCaption +
+	/* std::wstring windowText = mMainWndCaption +
 		 L"  mclientW: " + std::to_wstring(mGBuffer->Width()) + 
 	 L"  mclientH: " + std::to_wstring(mGBuffer->Height()) + L"aspect" + std::to_wstring(mGBuffer->Width()/ mGBuffer->Height());
 
 	 SetWindowText(mhMainWnd, windowText.c_str());*/
 
 }
-
-void NormalMapApp::Draw(const GameTimer& gt)
+ 
+void MyApp::Draw(const GameTimer& gt)
 {
-    auto cmdListAlloc = mCurrFrameResource->CmdListAlloc;
+	auto cmdListAlloc = mCurrFrameResource->CmdListAlloc;
 
-	// 重置命令分配器
-    ThrowIfFailed(cmdListAlloc->Reset());
+	ThrowIfFailed(cmdListAlloc->Reset());
+	ThrowIfFailed(mCommandList->Reset(cmdListAlloc.Get(), mPSOs["defferred"].Get()));
 
-	// 重置命令列表
-    ThrowIfFailed(mCommandList->Reset(cmdListAlloc.Get(), mPSOs["defferred"].Get()));
+	mCommandList->RSSetViewports(1, &mGBuffer->Viewport());
+	mCommandList->RSSetScissorRects(1, &mGBuffer->ScissorRect());
 
-    mCommandList->RSSetViewports(1, &mGBuffer->Viewport());
-    mCommandList->RSSetScissorRects(1, &mGBuffer->ScissorRect());
-
-    // 转换资源状态
-	for (int i = 0; i < 3; i++)
-	{
-		//改变三个gbuffer资源状态
-		mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mGBuffer->Resource(BufferType(i)),
-			D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
+	for (int i = 0; i < 3; i++) {
+		mCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(mGBuffer->Resource(BufferType(i)),
+				D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET));
 	}
 
-    // 清除渲染目标等
-	for (int i = 0; i < 3; i++)
-	{
-		//清空三个gbuffer
-		mCommandList->ClearRenderTargetView(mGBuffer->Rtv(BufferType(i)), mGBuffer->clear(BufferType(i)), 0, nullptr);
+	for (int i = 0; i < 3; i++) {
+		mCommandList->ClearRenderTargetView(mGBuffer->Rtv(BufferType(i)),
+			mGBuffer->clear(BufferType(i)), 0, nullptr);
 	}
-    mCommandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-	// 把gbuffer的三张图作为renderTarget
-    mCommandList->OMSetRenderTargets(3, &mGBuffer->Rtv(BufferType(0)), true, &DepthStencilView());
-
-	// 设置srv描述符堆
-	ID3D12DescriptorHeap* descriptorHeaps[] = { mSrvDescriptorHeap.Get() };
-	mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps); //10张srv 6张diffuse和normal 4张天空盒
+	mCommandList->ClearDepthStencilView(DepthStencilView(),
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	// 绑定rtv和dsv
+	mCommandList->OMSetRenderTargets(3, &mGBuffer->Rtv(BufferType(0)), true, &DepthStencilView());
+	// 绑定描述符堆
+	ID3D12DescriptorHeap* descriptorHeaps[] = { mSrvDescriptorHeap.Get()};
+	mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
 	mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
 
 	auto passCB = mCurrFrameResource->PassCB->Resource();
 	mCommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
 
-	// 绑定材质
-	auto matBuffer = mCurrFrameResource->MaterialBuffer->Resource();
-	mCommandList->SetGraphicsRootShaderResourceView(2, matBuffer->GetGPUVirtualAddress());
+	auto matCB = mCurrFrameResource->MaterialBuffer->Resource();
+	mCommandList->SetGraphicsRootShaderResourceView(2, matCB->GetGPUVirtualAddress());
 
-	// 绑定天空盒的立方体贴图
+	// skycube
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	skyTexDescriptor.Offset(mSkyTexHeapIndex, mCbvSrvDescriptorSize);
 	mCommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
-
-	// 绑定其他的各种贴图
+	// 6 tex
 	mCommandList->SetGraphicsRootDescriptorTable(4, mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
-	// 将各种物体的位置,法线,颜色绘制到G-buffer
-    DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[(UINT)RenderLayer::Opaque]);
 
-	// 最后绘制天空盒, 注意天空盒没有法线位置这些, 只需要个颜色就行
 	mCommandList->SetPipelineState(mPSOs["sky"].Get());
-	DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Sky]);
+	DrawRenderItems(mCommandList.Get(), mRitemLayer[(UINT)RenderLayer::Sky]);
 
-	//----------------------------------------------------------------------------------------------------------------
-	// 转换资源状态
-	for (int i = 0; i < 3; i++)
-	{
-		mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mGBuffer->Resource(BufferType(i)),
-			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
+	for (int i = 0; i < 3; i++) {
+		mCommandList->ResourceBarrier(1,
+			&CD3DX12_RESOURCE_BARRIER::Transition(mGBuffer->Resource(BufferType(i)),
+				D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ));
 	}
-
-	//
+	//----------------------------------------------------------------------------------------------------------------
 	// 开始第二个pass
-	//
 	mCommandList->RSSetViewports(1, &mScreenViewport);
 	mCommandList->RSSetScissorRects(1, &mScissorRect);
 
-	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
-		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+	mCommandList->ResourceBarrier(1,
+		&CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 	mCommandList->ClearRenderTargetView(CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
 
-	// 设置后台缓冲区为渲染目标
 	mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
-	
-	//设置根签名和pso
 	mCommandList->SetGraphicsRootSignature(mPass2RootSignature.Get());
 	mCommandList->SetPipelineState(mPSOs["pass2"].Get());
 
-	// 绑定各种srv,cbv资源
 	mCommandList->SetGraphicsRootConstantBufferView(0, passCB->GetGPUVirtualAddress());
-	mCommandList->SetGraphicsRootDescriptorTable(1, mGBuffer->Srv(BufferType::pos));   // 绑定世界坐标
-	mCommandList->SetGraphicsRootDescriptorTable(2, mGBuffer->Srv(BufferType::normal)); // 绑定法线
-	mCommandList->SetGraphicsRootDescriptorTable(3, mGBuffer->Srv(BufferType::color)); // 绑定颜色
+	mCommandList->SetGraphicsRootDescriptorTable(1, mGBuffer->Srv(BufferType(0)));
+	mCommandList->SetGraphicsRootDescriptorTable(2, mGBuffer->Srv(BufferType(1)));
+	mCommandList->SetGraphicsRootDescriptorTable(3, mGBuffer->Srv(BufferType(2)));
+
 	DrawFullscreenQuad(mCommandList.Get());
-    // 转换为提出状态
-	mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
+	mCommandList->ResourceBarrier(1,
+		&CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
-    ThrowIfFailed(mCommandList->Close());
+	ThrowIfFailed(mCommandList->Close());
 
-    // Add the command list to the queue for execution.
-    ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
-    mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+	ID3D12CommandList* cmdLists[] = { mCommandList.Get() };
+	mCommandQueue->ExecuteCommandLists(1, cmdLists);
 
-    // Swap the back and front buffers
-    ThrowIfFailed(mSwapChain->Present(0, 0));
+	ThrowIfFailed(mSwapChain->Present(0, 0));
 	mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
 
-    // Advance the fence value to mark commands up to this fence point.
-    mCurrFrameResource->Fence = ++mCurrentFence;
+	mCurrFrameResource->Fence =  ++mCurrentFence;
 
-    // Add an instruction to the command queue to set a new fence point. 
-    // Because we are on the GPU timeline, the new fence point won't be 
-    // set until the GPU finishes processing all the commands prior to this Signal().
-    mCommandQueue->Signal(mFence.Get(), mCurrentFence);
+	mCommandQueue->Signal(mFence.Get(), mCurrentFence);
 }
 
-void NormalMapApp::OnMouseDown(WPARAM btnState, int x, int y)
+void MyApp::OnMouseDown(WPARAM btnState, int x, int y)
 {
     mLastMousePos.x = x;
     mLastMousePos.y = y;
@@ -412,12 +383,12 @@ void NormalMapApp::OnMouseDown(WPARAM btnState, int x, int y)
     SetCapture(mhMainWnd);
 }
 
-void NormalMapApp::OnMouseUp(WPARAM btnState, int x, int y)
+void MyApp::OnMouseUp(WPARAM btnState, int x, int y)
 {
     ReleaseCapture();
 }
 
-void NormalMapApp::OnMouseMove(WPARAM btnState, int x, int y)
+void MyApp::OnMouseMove(WPARAM btnState, int x, int y)
 {
     if((btnState & MK_LBUTTON) != 0)
     {
@@ -433,7 +404,7 @@ void NormalMapApp::OnMouseMove(WPARAM btnState, int x, int y)
     mLastMousePos.y = y;
 }
  
-void NormalMapApp::OnKeyboardInput(const GameTimer& gt)
+void MyApp::OnKeyboardInput(const GameTimer& gt)
 {
 	const float dt = gt.DeltaTime();
 
@@ -452,12 +423,12 @@ void NormalMapApp::OnKeyboardInput(const GameTimer& gt)
 	mCamera.UpdateViewMatrix();
 }
  
-void NormalMapApp::AnimateMaterials(const GameTimer& gt)
+void MyApp::AnimateMaterials(const GameTimer& gt)
 {
 	
 }
 
-void NormalMapApp::UpdateObjectCBs(const GameTimer& gt)
+void MyApp::UpdateObjectCBs(const GameTimer& gt)
 {
 	auto currObjectCB = mCurrFrameResource->ObjectCB.get();
 	for(auto& e : mAllRitems)
@@ -482,7 +453,7 @@ void NormalMapApp::UpdateObjectCBs(const GameTimer& gt)
 	}
 }
 
-void NormalMapApp::UpdateMaterialBuffer(const GameTimer& gt)
+void MyApp::UpdateMaterialBuffer(const GameTimer& gt)
 {
 	auto currMaterialBuffer = mCurrFrameResource->MaterialBuffer.get();
 	for(auto& e : mMaterials)
@@ -510,7 +481,7 @@ void NormalMapApp::UpdateMaterialBuffer(const GameTimer& gt)
 	}
 }
 
-void NormalMapApp::UpdateMainPassCB(const GameTimer& gt)
+void MyApp::UpdateMainPassCB(const GameTimer& gt)
 {
 	XMMATRIX view = mCamera.GetView();
 	XMMATRIX proj = mCamera.GetProj();
@@ -535,9 +506,9 @@ void NormalMapApp::UpdateMainPassCB(const GameTimer& gt)
 	mMainPassCB.DeltaTime = gt.DeltaTime();
 	mMainPassCB.AmbientLight = { 0.3f, 0.3f, 0.35f, 1.0f };
 	mMainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
-	mMainPassCB.Lights[0].Strength = { 0.9f, 0.9f, 0.9f };
+	mMainPassCB.Lights[0].Strength = { 0.8f, 0.8f, 0.8f };
 	mMainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
-	mMainPassCB.Lights[1].Strength = { 0.4f, 0.4f, 0.4f };
+	mMainPassCB.Lights[1].Strength = { 0.2f, 0.2f, 0.2f };
 	mMainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
 	mMainPassCB.Lights[2].Strength = { 0.2f, 0.2f, 0.2f };
 
@@ -545,10 +516,9 @@ void NormalMapApp::UpdateMainPassCB(const GameTimer& gt)
 	currPassCB->CopyData(0, mMainPassCB);
 }
 
-void NormalMapApp::LoadTextures()
+void MyApp::LoadTextures()
 {
-	std::vector<std::string> texNames = 
-	{
+	std::vector<std::string> texNames = {
 		"bricksDiffuseMap",
 		"bricksNormalMap",
 		"tileDiffuseMap",
@@ -558,8 +528,7 @@ void NormalMapApp::LoadTextures()
 		"skyCubeMap"
 	};
 	
-	std::vector<std::wstring> texFilenames = 
-	{
+	std::vector<std::wstring> texFilenames = {
 		L"../../Textures/bricks2.dds",
 		L"../../Textures/bricks2_nmap.dds",
 		L"../../Textures/tile.dds",
@@ -568,134 +537,110 @@ void NormalMapApp::LoadTextures()
 		L"../../Textures/default_nmap.dds",
 		L"../../Textures/snowcube1024.dds"
 	};
-	
-	for(int i = 0; i < (int)texNames.size(); ++i)
-	{
+
+	for (int i = 0; i < (int)texNames.size(); ++i) {
 		auto texMap = std::make_unique<Texture>();
 		texMap->Name = texNames[i];
 		texMap->Filename = texFilenames[i];
 		ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
 			mCommandList.Get(), texMap->Filename.c_str(),
 			texMap->Resource, texMap->UploadHeap));
-			
-		mTextures[texMap->Name] = std::move(texMap);
-	}		
-}
 
-void NormalMapApp::BuildRootSignature()
-{
+		mTextures[texMap->Name] = std::move(texMap);
+	}
+}
+ 
+void MyApp::BuildRootSignature()
+{ 
 	CD3DX12_DESCRIPTOR_RANGE texTable0;
 	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0);
-
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
 	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 1, 0);
 
-    // Root parameter can be a table, root descriptor or root constants.
-    CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+	CD3DX12_ROOT_PARAMETER slotRootParameters[5];
 
-	// Perfomance TIP: Order from most frequent to least frequent.
-    slotRootParameter[0].InitAsConstantBufferView(0); //obj cb
-    slotRootParameter[1].InitAsConstantBufferView(1); //pass cb
-    slotRootParameter[2].InitAsShaderResourceView(0, 1); // mat buffer
-	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // 天空盒纹理
-	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // 6张图
-
+	slotRootParameters[0].InitAsConstantBufferView(0);// obj cb
+	slotRootParameters[1].InitAsConstantBufferView(1);// pass cb
+	slotRootParameters[2].InitAsShaderResourceView(0, 1);// mat buffer
+	slotRootParameters[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // skycube
+	slotRootParameters[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // tex
 
 	auto staticSamplers = GetStaticSamplers();
 
-    // A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5, slotRootParameter,
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5,slotRootParameters,
 		(UINT)staticSamplers.size(), staticSamplers.data(),
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    // create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
-    ComPtr<ID3DBlob> serializedRootSig = nullptr;
-    ComPtr<ID3DBlob> errorBlob = nullptr;
-    HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-        serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
-
-    if(errorBlob != nullptr)
-    {
-        ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-    }
-    ThrowIfFailed(hr);
-
-    ThrowIfFailed(md3dDevice->CreateRootSignature(
-		0,
-        serializedRootSig->GetBufferPointer(),
-        serializedRootSig->GetBufferSize(),
-        IID_PPV_ARGS(mRootSignature.GetAddressOf())));
-}
-
-void NormalMapApp::BuildPass2RootSignature()
-{
-	//
-	// 为第二个pass创建根签名
-	//
-	CD3DX12_DESCRIPTOR_RANGE pos;
-	pos.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0);
-
-	CD3DX12_DESCRIPTOR_RANGE normal;
-	normal.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1, 0);
-
-	CD3DX12_DESCRIPTOR_RANGE color;
-	color.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0);
-
-	// 3个贴图和一个常量缓冲区
-	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
-
-	// Perfomance TIP: Order from most frequent to least frequent.
-	slotRootParameter[0].InitAsConstantBufferView(0); //pass cb
-	slotRootParameter[1].InitAsDescriptorTable(1, &pos, D3D12_SHADER_VISIBILITY_PIXEL);
-	slotRootParameter[2].InitAsDescriptorTable(1, &normal, D3D12_SHADER_VISIBILITY_PIXEL);
-	slotRootParameter[3].InitAsDescriptorTable(1, &color, D3D12_SHADER_VISIBILITY_PIXEL);
-
-
-	auto staticSamplers = GetStaticSamplers();
-
-	// A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,
-		(UINT)staticSamplers.size(), staticSamplers.data(),
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-	// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
 	ComPtr<ID3DBlob> serializedRootSig = nullptr;
 	ComPtr<ID3DBlob> errorBlob = nullptr;
 	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
 		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
 
-	if (errorBlob != nullptr)
-	{
+	if (errorBlob != nullptr) {
 		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
 	}
 	ThrowIfFailed(hr);
 
 	ThrowIfFailed(md3dDevice->CreateRootSignature(
-		0,
+		0, 
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(mRootSignature.GetAddressOf())));
+}
+ 
+void MyApp::BuildPass2RootSignature()
+{
+	// 创建pass2的根签名 这里有passcb和三张srv
+	CD3DX12_DESCRIPTOR_RANGE texTable0;
+	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	CD3DX12_DESCRIPTOR_RANGE texTable1;
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	CD3DX12_DESCRIPTOR_RANGE texTable2;
+	texTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+
+	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+
+	slotRootParameter[0].InitAsConstantBufferView(0);
+	slotRootParameter[1].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[2].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable2, D3D12_SHADER_VISIBILITY_PIXEL);
+
+	auto staticSamplers = GetStaticSamplers();
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,
+		staticSamplers.size(), staticSamplers.data(),
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		&serializedRootSig, &errorBlob);
+
+	if (errorBlob != nullptr) {
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(md3dDevice->CreateRootSignature(0,
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
 		IID_PPV_ARGS(mPass2RootSignature.GetAddressOf())));
 }
-
-void NormalMapApp::BuildDescriptorHeaps()
+ 
+void MyApp::BuildDescriptorHeaps()
 {
-	//
-	// Create the SRV heap.
-	//
+	// create the srv heap
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 10;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.NumDescriptors = 10;// 6 srv 1 cubemap 3 gbuffer srv
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
 
-	//
-	// Fill out the heap with actual descriptors.
-	//
+	// 填充描述符堆
 	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-	int count = 0;
+	int count = 0; // 描述符数量
 
-	std::vector<ComPtr<ID3D12Resource>> tex2DList = 
-	{
+	std::vector<ComPtr<ID3D12Resource>> tex2DList = {
 		mTextures["bricksDiffuseMap"]->Resource,
 		mTextures["bricksNormalMap"]->Resource,
 		mTextures["tileDiffuseMap"]->Resource,
@@ -703,46 +648,51 @@ void NormalMapApp::BuildDescriptorHeaps()
 		mTextures["defaultDiffuseMap"]->Resource,
 		mTextures["defaultNormalMap"]->Resource
 	};
-	
+
 	auto skyCubeMap = mTextures["skyCubeMap"]->Resource;
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Texture2D.MostDetailedMip = 0;
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-	
-	for(UINT i = 0; i < (UINT)tex2DList.size(); ++i)
-	{
+
+	// 6 tex 描述符创建
+	for (UINT i = 0; i < (UINT)tex2DList.size(); ++i) {
 		srvDesc.Format = tex2DList[i]->GetDesc().Format;
 		srvDesc.Texture2D.MipLevels = tex2DList[i]->GetDesc().MipLevels;
 		md3dDevice->CreateShaderResourceView(tex2DList[i].Get(), &srvDesc, hDescriptor);
 
-		// next descriptor
+		//下一个描述符
 		hDescriptor.Offset(1, mCbvSrvDescriptorSize);
 		count++;
 	}
-	
+
+	// 1 sky 描述符创建
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
 	srvDesc.TextureCube.MostDetailedMip = 0;
 	srvDesc.TextureCube.MipLevels = skyCubeMap->GetDesc().MipLevels;
 	srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
 	srvDesc.Format = skyCubeMap->GetDesc().Format;
 	md3dDevice->CreateShaderResourceView(skyCubeMap.Get(), &srvDesc, hDescriptor);
-	
-	mSkyTexHeapIndex = (UINT)tex2DList.size();
 
-	// 接下来为G-Buffer创建srv, rtv等
+	mSkyTexHeapIndex = (UINT)tex2DList.size();
 	count++;
-	auto cpuSrv = CD3DX12_CPU_DESCRIPTOR_HANDLE(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart()).Offset(count, mCbvSrvDescriptorSize);
-	auto gpuSrv = CD3DX12_GPU_DESCRIPTOR_HANDLE(mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart()).Offset(count, mCbvSrvDescriptorSize);
-	auto cpuRtv = CD3DX12_CPU_DESCRIPTOR_HANDLE(mRtvHeap->GetCPUDescriptorHandleForHeapStart()).Offset(SwapChainBufferCount, mRtvDescriptorSize);
+
+	// 剩下的交给gbuffer创建 传递句柄即可
+	auto cpuSrv = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+		mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart()).Offset(count, mCbvSrvDescriptorSize);
+	auto gpuSrv = CD3DX12_GPU_DESCRIPTOR_HANDLE(
+		mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart()).Offset(count, mCbvSrvDescriptorSize);
+	auto cpuRtv = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+		mRtvHeap->GetCPUDescriptorHandleForHeapStart()).Offset(SwapChainBufferCount, mRtvDescriptorSize);
 
 	mGBuffer->BuildDescriptors(cpuSrv, gpuSrv, cpuRtv, mCbvSrvDescriptorSize, mRtvDescriptorSize);
-}
+} 
 
-void NormalMapApp::BuildShadersAndInputLayout()
+void MyApp::BuildShadersAndInputLayout()
 {
+	// Shader宏
 	const D3D_SHADER_MACRO alphaTestDefines[] =
 	{
 		"ALPHA_TEST", "1",
@@ -752,6 +702,7 @@ void NormalMapApp::BuildShadersAndInputLayout()
 	//mShaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\Default.hlsl", nullptr, "VS", "vs_5_1");
 	//mShaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\Default.hlsl", nullptr, "PS", "ps_5_1");
 
+	//编译shader
 	mShaders["DefferredVS"] = d3dUtil::CompileShader(L"Shaders\\DefferredPass1.hlsl", nullptr, "VS", "vs_5_1");
 	mShaders["DefferredPS"] = d3dUtil::CompileShader(L"Shaders\\DefferredPass1.hlsl", nullptr, "PS", "ps_5_1");
 
@@ -770,7 +721,7 @@ void NormalMapApp::BuildShadersAndInputLayout()
     };
 }
 
-void NormalMapApp::BuildShapeGeometry()
+void MyApp::BuildShapeGeometry()
 {
     GeometryGenerator geoGen;
 	GeometryGenerator::MeshData box = geoGen.CreateBox(1.0f, 1.0f, 1.0f, 3);
@@ -898,7 +849,7 @@ void NormalMapApp::BuildShapeGeometry()
 	mGeometries[geo->Name] = std::move(geo);
 }
 
-void NormalMapApp::BuildSkullGeometry()
+void MyApp::BuildSkullGeometry()
 {
 	std::ifstream fin("Models/skull.txt");
 
@@ -1010,93 +961,81 @@ void NormalMapApp::BuildSkullGeometry()
 	mGeometries[geo->Name] = std::move(geo);
 }
 
-void NormalMapApp::BuildPSOs()
+void MyApp::BuildPSOs()
 {
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePsoDesc;
+	// PSO for opaque objects.---------------------------------------------------------
 
-	//
-	// PSO for opaque objects.
-	//
-    ZeroMemory(&opaquePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	opaquePsoDesc.InputLayout = { mInputLayout.data(), (UINT)mInputLayout.size() };
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePsoDesc;
+
+	ZeroMemory(&opaquePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 	opaquePsoDesc.pRootSignature = mRootSignature.Get();
-	opaquePsoDesc.VS = 
-	{ 
-		reinterpret_cast<BYTE*>(mShaders["DefferredVS"]->GetBufferPointer()), 
+	opaquePsoDesc.VS = {
+		reinterpret_cast<BYTE*>(mShaders["DefferredVS"]->GetBufferPointer()),
 		mShaders["DefferredVS"]->GetBufferSize()
 	};
-	opaquePsoDesc.PS = 
-	{ 
+	opaquePsoDesc.PS = {
 		reinterpret_cast<BYTE*>(mShaders["DefferredPS"]->GetBufferPointer()),
 		mShaders["DefferredPS"]->GetBufferSize()
 	};
-	opaquePsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	//opaquePsoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
 	opaquePsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	opaquePsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	opaquePsoDesc.SampleMask = UINT_MAX;
+	opaquePsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	opaquePsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	opaquePsoDesc.InputLayout = { mInputLayout.data(),(UINT)mInputLayout.size() };
 	opaquePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	opaquePsoDesc.NumRenderTargets = 3;  // 注意pso也要设置渲染目标数量
-	opaquePsoDesc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;  // 位置和法线都用16位float提高精度
+	opaquePsoDesc.NumRenderTargets = 3;
+	opaquePsoDesc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	opaquePsoDesc.RTVFormats[1] = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	opaquePsoDesc.RTVFormats[2] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
 	opaquePsoDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
 	opaquePsoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
-	opaquePsoDesc.DSVFormat = mDepthStencilFormat;
-    ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["defferred"])));
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&opaquePsoDesc, IID_PPV_ARGS(&mPSOs["defferred"])));
 
-	//
-	// PSO for sky.
-	//
+	// PSO for sky.--------------------------------------------------------------------
+
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = opaquePsoDesc;
 
-	// 摄像机在天空球内部, 不能背面剔除
-	skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-
-	// 天空球深度都设为1, 因此深度测试要设置为小于等于
+	skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
 	skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-	skyPsoDesc.VS =
-	{
+	skyPsoDesc.VS = {
 		reinterpret_cast<BYTE*>(mShaders["skyVS"]->GetBufferPointer()),
 		mShaders["skyVS"]->GetBufferSize()
 	};
-	skyPsoDesc.PS =
-	{
+	skyPsoDesc.PS = {
 		reinterpret_cast<BYTE*>(mShaders["skyPS"]->GetBufferPointer()),
 		mShaders["skyPS"]->GetBufferSize()
 	};
 	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&skyPsoDesc, IID_PPV_ARGS(&mPSOs["sky"])));
 
+	// PSO for pass2.--------------------------------------------------------------------
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC Pass2PsoDesc;
-	ZeroMemory(&Pass2PsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	Pass2PsoDesc.pRootSignature = mPass2RootSignature.Get();
-	Pass2PsoDesc.VS =
-	{
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC pass2PsoDesc;
+	ZeroMemory(&pass2PsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	pass2PsoDesc.pRootSignature = mPass2RootSignature.Get();
+	pass2PsoDesc.VS = {
 		reinterpret_cast<BYTE*>(mShaders["Pass2VS"]->GetBufferPointer()),
 		mShaders["Pass2VS"]->GetBufferSize()
 	};
-	Pass2PsoDesc.PS =
-	{
+	pass2PsoDesc.PS = {
 		reinterpret_cast<BYTE*>(mShaders["Pass2PS"]->GetBufferPointer()),
 		mShaders["Pass2PS"]->GetBufferSize()
 	};
-	Pass2PsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	Pass2PsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	Pass2PsoDesc.DepthStencilState.DepthEnable = false;
-	Pass2PsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-	Pass2PsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-	Pass2PsoDesc.SampleMask = UINT_MAX;
-	Pass2PsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	Pass2PsoDesc.NumRenderTargets = 1;  // 注意pso也要设置渲染目标数量
-	Pass2PsoDesc.RTVFormats[0] = mBackBufferFormat;
-	Pass2PsoDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
-	Pass2PsoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
-	Pass2PsoDesc.DSVFormat = mDepthStencilFormat;
-	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&Pass2PsoDesc, IID_PPV_ARGS(&mPSOs["pass2"])));
+	pass2PsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	pass2PsoDesc.SampleMask = UINT_MAX;
+	pass2PsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	pass2PsoDesc.DepthStencilState.DepthEnable = false;
+	pass2PsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	pass2PsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	pass2PsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	pass2PsoDesc.NumRenderTargets = 1;
+	pass2PsoDesc.RTVFormats[0] = mBackBufferFormat;
+	pass2PsoDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
+	pass2PsoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+	ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&pass2PsoDesc, IID_PPV_ARGS(&mPSOs["pass2"])));
 }
 
-void NormalMapApp::BuildFrameResources()
+void MyApp::BuildFrameResources()
 {
     for(int i = 0; i < gNumFrameResources; ++i)
     {
@@ -1105,7 +1044,7 @@ void NormalMapApp::BuildFrameResources()
     }
 }
 
-void NormalMapApp::BuildMaterials()
+void MyApp::BuildMaterials()
 {
 	auto bricks0 = std::make_unique<Material>();
 	bricks0->Name = "bricks0";
@@ -1159,7 +1098,7 @@ void NormalMapApp::BuildMaterials()
 	mMaterials["sky"] = std::move(sky);
 }
 
-void NormalMapApp::BuildRenderItems()
+void MyApp::BuildRenderItems()
 {
 	//天空盒 在opaque之后渲染
 	auto skyRitem = std::make_unique<RenderItem>();
@@ -1300,30 +1239,28 @@ void NormalMapApp::BuildRenderItems()
 	}
 }
 
-void NormalMapApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
+void MyApp::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector<RenderItem*>& ritems)
 {
-    UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
- 
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
 	auto objectCB = mCurrFrameResource->ObjectCB->Resource();
 
-    // For each render item...
-    for(size_t i = 0; i < ritems.size(); ++i)
-    {
-        auto ri = ritems[i];
+	for (size_t i = 0; i < ritems.size(); ++i) {
+		auto ri = ritems[i];
 
-        cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
-        cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
-        cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+		cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+		cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+		cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
-        D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex*objCBByteSize;
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress() + ri->ObjCBIndex * objCBByteSize;
 
 		cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-        cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
-    }
+		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+	}
 }
 
-void NormalMapApp::DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList)
+void MyApp::DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList)
 {
 	// 用 SV_VertexID 来得到顶点索引
 	cmdList->IASetVertexBuffers(0, 1, nullptr);
@@ -1333,7 +1270,7 @@ void NormalMapApp::DrawFullscreenQuad(ID3D12GraphicsCommandList* cmdList)
 	cmdList->DrawInstanced(24, 1, 0, 0);
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> NormalMapApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> MyApp::GetStaticSamplers()
 {
 	// Applications usually only need a handful of samplers.  So just define them all up front
 	// and keep them available as part of the root signature.  
@@ -1389,3 +1326,4 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> NormalMapApp::GetStaticSamplers
 		linearWrap, linearClamp, 
 		anisotropicWrap, anisotropicClamp };
 }
+

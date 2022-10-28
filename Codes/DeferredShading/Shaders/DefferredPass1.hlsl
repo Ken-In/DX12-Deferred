@@ -40,25 +40,20 @@ struct PixelOut
 
 VertexOut VS(VertexIn vin)
 {
-	VertexOut vout = (VertexOut)0.0f;
-
-	MaterialData matData = gMaterialData[gMaterialIndex];
-	
-    // 变换到世界空间
+    VertexOut vout = (VertexOut)0.0f;
+    
+    MaterialData matData = gMaterialData[gMaterialIndex];
+    
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
     vout.PosW = posW.xyz;
-
-    // 非等比缩放时, 需要乘以世界矩阵的逆转置矩阵
-    vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
-	
-	vout.TangentW = mul(vin.TangentU, (float3x3)gWorld);
-
-    // 变换到剪裁空间
     vout.PosH = mul(posW, gViewProj);
+
+    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
 	
-	// 对于纹理的变换
-	float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
-	vout.TexC = mul(texC, matData.MatTransform).xy;
+    vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
+    
+    float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
+    vout.TexC = mul(texC, matData.MatTransform).xy;
 	
     return vout;
 }
@@ -66,37 +61,33 @@ VertexOut VS(VertexIn vin)
 PixelOut PS(VertexOut pin)
 {
 	// 获取材质
-	MaterialData matData = gMaterialData[gMaterialIndex];
-	float4 diffuseAlbedo = matData.DiffuseAlbedo;
-	float3 fresnelR0 = matData.FresnelR0;
-	float  roughness = matData.Roughness;
-	uint diffuseMapIndex = matData.DiffuseMapIndex;
-	uint normalMapIndex = matData.NormalMapIndex;
-	
-	// 对法线插值可能会使其失去单位长度, 因此再次归一化.
+    MaterialData matData = gMaterialData[gMaterialIndex];
+    
+    // 法线插值可能会使其失去单位长度, 因此再次归一化.
     pin.NormalW = normalize(pin.NormalW);
-	
-	// 计算法线
-	float4 normalMapSample = gTextureMaps[normalMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
-	float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.rgb, pin.NormalW, pin.TangentW);	
-
-	// 得到的最终的颜色
-	diffuseAlbedo *= gTextureMaps[diffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
-    // 计算光滑度
-	const float shininess = (1.0f - roughness) * normalMapSample.a;
-	
+    
+    // 计算法线
+    float4 normalSample = gTextureMaps[matData.NormalMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
+    float3 bumpedNormalW = NormalSampleToWorldSpace(normalSample.xyz, pin.NormalW, pin.TangentW);
+   
+    // 材质颜色乘纹理颜色 得到的基本颜色
+    float4 diffuseAlbedo = matData.DiffuseAlbedo * 
+    gTextureMaps[matData.DiffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);
+    
+    // 计算光滑度 normalMap的a通道存的是光滑度
+    const float shininess = (1.0f - matData.Roughness) * normalSample.a;
+    
     PixelOut pout;
-    pout.position = float4(pin.PosW, fresnelR0.x); // 这里假设R0三项大小一致
-    pout.normal = float4(bumpedNormalW.xyz, shininess); // 法线和光滑度
-    pout.color = float4(diffuseAlbedo.xyz, 1.0f);
-	
-	// 颜色还要加上反射的部分
+    pout.position = float4(pin.PosW, matData.FresnelR0.x); // 假设R0三项大小一致
+    pout.normal = float4(bumpedNormalW, shininess); // normalbuffer a通道存光滑度
+    
+    // 基本颜色 + 反射部分颜色
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
-    float3 r = reflect(-toEyeW, bumpedNormalW);
-    float4 reflectionColor = gCubeMap.Sample(gsamLinearWrap, r);
-    float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
-    pout.color += float4(shininess * fresnelFactor * reflectionColor.rgb, 0.0f);
-	
+    float3 ref = reflect(-toEyeW, bumpedNormalW);
+    float4 reflectColor = gCubeMap.Sample(gsamAnisotropicWrap, ref);
+    float3 fresnelFactor = SchlickFresnel(matData.FresnelR0, bumpedNormalW, ref);
+    pout.color = float4(diffuseAlbedo.xyz +shininess * fresnelFactor * reflectColor.xyz, 1.0f);
+    
     return pout;
 }
 

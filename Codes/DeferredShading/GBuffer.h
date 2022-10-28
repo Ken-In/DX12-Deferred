@@ -115,6 +115,7 @@ GBuffer::GBuffer(ID3D12Device* device, UINT width, UINT height)
 
 void GBuffer::BuildResource()
 {
+	assert(md3dDevice);
 	D3D12_RESOURCE_DESC texDesc;
 	ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
 	texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -158,7 +159,6 @@ void GBuffer::BuildResource()
 		&optClear,
 		IID_PPV_ARGS(&mDiffuseColorMap)));
 }
-
 
 void GBuffer::BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv, CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuRtv, UINT srvDescSize, UINT rtvDescSize)
 {
@@ -217,6 +217,8 @@ void GBuffer::OnResize(UINT newWidth, UINT newHeight)
 	mNormalMap.Reset();
 	mPositionMap.Reset();
 	mDiffuseColorMap.Reset();
+
+	//BuildDescriptors();
 
 	if (mWidth != newWidth || mHeight != newHeight)
 	{
