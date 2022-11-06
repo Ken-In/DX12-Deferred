@@ -1,10 +1,11 @@
 # DX12-Defferred
 
-学习完了DX12龙书之后想实现一个最简单的延迟渲染，但因为水平不够没能实现，之后在github上看到了别人的实现，就跟着做了一遍，收获很大。
+基于DX12龙书框架的延迟渲染实现。
+学习完了DX12龙书之后，想实现一个简单项目来加深理解，刚好在github上看到了别人的延迟渲染实现，就跟着做了一遍，收获很大。
 项目代码都使用Visual Studio 2022构建。
 
 参考项目：https://github.com/kaku-iwate/DX12
-DX12源码：https://github.com/d3dcoder/d3d12book
+DX12龙书源码：https://github.com/d3dcoder/d3d12book
 
 # 延迟渲染项目简单介绍
   该渲染使用两个Pass：
