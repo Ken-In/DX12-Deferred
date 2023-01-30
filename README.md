@@ -5,7 +5,7 @@
 参考项目：https://github.com/kaku-iwate/DX12
 DX12龙书源码：https://github.com/d3dcoder/d3d12book
 
-  该渲染使用两个Pass：
+  使用两个Pass：
   - 第一个pass绘制G-Buffer，共三张图分别存储：pos、normal和color的信息；
   - 第二个pass采样这三张图实现屏幕空间的光照计算。
   
